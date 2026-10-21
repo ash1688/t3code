@@ -249,6 +249,22 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     assert.isUndefined(options.extraArgs?.["dangerously-skip-permissions"]);
   });
 
+  it("lets the thread read the master folder and tells it to follow it", () => {
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "native-master-folder",
+      resume: false,
+      cwd: "/workspace",
+      masterFolder: "/teaching-master",
+    });
+    assert.deepEqual(options.additionalDirectories, ["/workspace", "/teaching-master"]);
+    const systemPrompt = options.systemPrompt;
+    assert.include(
+      typeof systemPrompt === "object" ? systemPrompt.append : "",
+      "shared reference material for all of their projects in /teaching-master",
+    );
+  });
+
   it("gives delegated children Claude's subagent prompt cache TTL", () => {
     const lineage = (relationshipToParent: "fork" | "subagent" | null) => ({
       lineage: {

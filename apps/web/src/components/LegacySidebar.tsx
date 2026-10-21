@@ -25,6 +25,7 @@ import { ProjectFavicon } from "./ProjectFavicon";
 import { useAtomValue } from "@effect/atom-react";
 import { autoAnimate } from "@formkit/auto-animate";
 import React, { useEffect, useEffectEvent, memo, useRef, useState } from "react";
+import * as Schema from "effect/Schema";
 import { cn } from "~/lib/utils";
 import { useShallow } from "zustand/react/shallow";
 import {
@@ -155,7 +156,16 @@ import {
   DialogTitle,
 } from "./ui/dialog";
 import { Input } from "./ui/input";
-import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
+import {
+  Menu,
+  MenuCheckboxItem,
+  MenuGroup,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuTrigger,
+} from "./ui/menu";
+import { groupProjectsByParentFolder } from "./LegacySidebar.folders";
 import {
   NumberField,
   NumberFieldDecrement,
@@ -207,6 +217,7 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useIsMobile } from "~/hooks/useMediaQuery";
 import { CommandDialogTrigger } from "./ui/command";
 import { useClientSettings, updateClientSettings } from "~/hooks/useSettings";
+import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import {
   derivePhysicalProjectKey,
@@ -2607,6 +2618,8 @@ function ProjectSortMenu({
   projectSortOrder,
   threadSortOrder,
   threadPreviewCount,
+  groupByParentFolder,
+  onGroupByParentFolderChange,
   onProjectSortOrderChange,
   onThreadSortOrderChange,
   onThreadPreviewCountChange,
@@ -2614,6 +2627,8 @@ function ProjectSortMenu({
   projectSortOrder: SidebarProjectSortOrder;
   threadSortOrder: SidebarThreadSortOrder;
   threadPreviewCount: SidebarThreadPreviewCount;
+  groupByParentFolder: boolean;
+  onGroupByParentFolderChange: (enabled: boolean) => void;
   onProjectSortOrderChange: (sortOrder: SidebarProjectSortOrder) => void;
   onThreadSortOrderChange: (sortOrder: SidebarThreadSortOrder) => void;
   onThreadPreviewCountChange: (count: SidebarThreadPreviewCount) => void;
@@ -2662,6 +2677,12 @@ function ProjectSortMenu({
               ),
             )}
           </MenuRadioGroup>
+          <MenuCheckboxItem
+            checked={groupByParentFolder}
+            onCheckedChange={(checked) => onGroupByParentFolderChange(checked)}
+          >
+            Group by parent folder
+          </MenuCheckboxItem>
         </MenuGroup>
         <MenuGroup>
           <div className="px-2 pt-2 pb-1 sm:text-xs font-medium text-muted-foreground">
@@ -2719,6 +2740,39 @@ function ProjectSortMenu({
         </MenuGroup>
       </MenuPopup>
     </Menu>
+  );
+}
+
+const COLLAPSED_PROJECT_FOLDERS_KEY = "t3code:legacy-sidebar:collapsed-project-folders";
+const CollapsedProjectFolders = Schema.Array(Schema.String);
+const NO_COLLAPSED_PROJECT_FOLDERS: readonly string[] = [];
+
+function SidebarProjectFolderSection({
+  label,
+  collapsed,
+  onToggle,
+  children,
+}: {
+  label: string;
+  collapsed: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <li className="list-none">
+      <button
+        type="button"
+        aria-expanded={!collapsed}
+        className="flex w-full items-center gap-1 rounded-sm px-2 pt-2 pb-1 text-left text-xs font-medium text-sidebar-muted-foreground/80 hover:text-sidebar-foreground"
+        onClick={onToggle}
+      >
+        <ChevronRightIcon
+          className={`size-3 shrink-0 transition-transform duration-150 ${collapsed ? "" : "rotate-90"}`}
+        />
+        <span className="truncate">{label}</span>
+      </button>
+      {collapsed ? null : <SidebarMenu>{children}</SidebarMenu>}
+    </li>
   );
 }
 
@@ -2851,6 +2905,35 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
   const handleThreadPreviewCountChange = (count: SidebarThreadPreviewCount) => {
     updateClientSettings({ sidebarThreadPreviewCount: count });
   };
+  const groupByParentFolder = useClientSettings(
+    (settings) => settings.sidebarGroupProjectsByParentFolder,
+  );
+  const [collapsedFolderKeys, setCollapsedFolderKeys] = useLocalStorage(
+    COLLAPSED_PROJECT_FOLDERS_KEY,
+    NO_COLLAPSED_PROJECT_FOLDERS,
+    CollapsedProjectFolders,
+  );
+  const renderFolderSections = (
+    renderProjects: (projects: readonly SidebarProjectSnapshot[]) => React.ReactNode,
+  ) =>
+    groupByParentFolder
+      ? groupProjectsByParentFolder(sortedProjects).map((section) => (
+          <SidebarProjectFolderSection
+            key={section.key}
+            label={section.label}
+            collapsed={collapsedFolderKeys.includes(section.key)}
+            onToggle={() =>
+              setCollapsedFolderKeys((keys) =>
+                keys.includes(section.key)
+                  ? keys.filter((key) => key !== section.key)
+                  : [...keys, section.key],
+              )
+            }
+          >
+            {renderProjects(section.projects)}
+          </SidebarProjectFolderSection>
+        ))
+      : renderProjects(sortedProjects);
 
   return (
     <SidebarContent
@@ -2902,6 +2985,10 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
               projectSortOrder={projectSortOrder}
               threadSortOrder={threadSortOrder}
               threadPreviewCount={threadPreviewCount}
+              groupByParentFolder={groupByParentFolder}
+              onGroupByParentFolderChange={(enabled) =>
+                updateClientSettings({ sidebarGroupProjectsByParentFolder: enabled })
+              }
               onProjectSortOrderChange={handleProjectSortOrderChange}
               onThreadSortOrderChange={handleThreadSortOrderChange}
               onThreadPreviewCountChange={handleThreadPreviewCountChange}
@@ -2935,67 +3022,80 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
             onDragCancel={handleProjectDragCancel}
           >
             <SidebarMenu>
-              <SortableContext items={sortedProjectKeys} strategy={verticalListSortingStrategy}>
-                {sortedProjects.map((project) => (
-                  <SortableProjectItem key={project.projectKey} projectId={project.projectKey}>
-                    {(dragHandleProps) => (
-                      <SidebarProjectItem
-                        project={project}
-                        isThreadListExpanded={expandedThreadListsByProject.has(project.projectKey)}
-                        activeRouteThreadKey={
-                          activeRouteProjectKey === project.projectKey ? routeThreadKey : null
-                        }
-                        openPullRequestsInRightPanel={openPullRequestsInRightPanel}
-                        newThreadShortcutLabel={newThreadShortcutLabel}
-                        handleNewThread={handleNewThread}
-                        archiveThread={archiveThread}
-                        deleteThread={deleteThread}
-                        markThreadUnread={markThreadUnread}
-                        threadJumpLabelByKey={threadJumpLabelByKey}
-                        attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
-                        expandThreadListForProject={expandThreadListForProject}
-                        collapseThreadListForProject={collapseThreadListForProject}
-                        dragInProgressRef={dragInProgressRef}
-                        suppressProjectClickAfterDragRef={suppressProjectClickAfterDragRef}
-                        suppressProjectClickForContextMenuRef={
-                          suppressProjectClickForContextMenuRef
-                        }
-                        isManualProjectSorting={isManualProjectSorting}
-                        dragHandleProps={dragHandleProps}
-                      />
-                    )}
-                  </SortableProjectItem>
-                ))}
-              </SortableContext>
+              {renderFolderSections((projects) => (
+                <SortableContext
+                  items={
+                    projects === sortedProjects
+                      ? sortedProjectKeys
+                      : projects.map((project) => project.projectKey)
+                  }
+                  strategy={verticalListSortingStrategy}
+                >
+                  {projects.map((project) => (
+                    <SortableProjectItem key={project.projectKey} projectId={project.projectKey}>
+                      {(dragHandleProps) => (
+                        <SidebarProjectItem
+                          project={project}
+                          isThreadListExpanded={expandedThreadListsByProject.has(
+                            project.projectKey,
+                          )}
+                          activeRouteThreadKey={
+                            activeRouteProjectKey === project.projectKey ? routeThreadKey : null
+                          }
+                          openPullRequestsInRightPanel={openPullRequestsInRightPanel}
+                          newThreadShortcutLabel={newThreadShortcutLabel}
+                          handleNewThread={handleNewThread}
+                          archiveThread={archiveThread}
+                          deleteThread={deleteThread}
+                          markThreadUnread={markThreadUnread}
+                          threadJumpLabelByKey={threadJumpLabelByKey}
+                          attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
+                          expandThreadListForProject={expandThreadListForProject}
+                          collapseThreadListForProject={collapseThreadListForProject}
+                          dragInProgressRef={dragInProgressRef}
+                          suppressProjectClickAfterDragRef={suppressProjectClickAfterDragRef}
+                          suppressProjectClickForContextMenuRef={
+                            suppressProjectClickForContextMenuRef
+                          }
+                          isManualProjectSorting={isManualProjectSorting}
+                          dragHandleProps={dragHandleProps}
+                        />
+                      )}
+                    </SortableProjectItem>
+                  ))}
+                </SortableContext>
+              ))}
             </SidebarMenu>
           </DndContext>
         ) : (
           <SidebarMenu ref={attachProjectListAutoAnimateRef}>
-            {sortedProjects.map((project) => (
-              <SidebarProjectListRow
-                key={project.projectKey}
-                project={project}
-                isThreadListExpanded={expandedThreadListsByProject.has(project.projectKey)}
-                activeRouteThreadKey={
-                  activeRouteProjectKey === project.projectKey ? routeThreadKey : null
-                }
-                openPullRequestsInRightPanel={openPullRequestsInRightPanel}
-                newThreadShortcutLabel={newThreadShortcutLabel}
-                handleNewThread={handleNewThread}
-                archiveThread={archiveThread}
-                deleteThread={deleteThread}
-                markThreadUnread={markThreadUnread}
-                threadJumpLabelByKey={threadJumpLabelByKey}
-                attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
-                expandThreadListForProject={expandThreadListForProject}
-                collapseThreadListForProject={collapseThreadListForProject}
-                dragInProgressRef={dragInProgressRef}
-                suppressProjectClickAfterDragRef={suppressProjectClickAfterDragRef}
-                suppressProjectClickForContextMenuRef={suppressProjectClickForContextMenuRef}
-                isManualProjectSorting={isManualProjectSorting}
-                dragHandleProps={null}
-              />
-            ))}
+            {renderFolderSections((projects) =>
+              projects.map((project) => (
+                <SidebarProjectListRow
+                  key={project.projectKey}
+                  project={project}
+                  isThreadListExpanded={expandedThreadListsByProject.has(project.projectKey)}
+                  activeRouteThreadKey={
+                    activeRouteProjectKey === project.projectKey ? routeThreadKey : null
+                  }
+                  openPullRequestsInRightPanel={openPullRequestsInRightPanel}
+                  newThreadShortcutLabel={newThreadShortcutLabel}
+                  handleNewThread={handleNewThread}
+                  archiveThread={archiveThread}
+                  deleteThread={deleteThread}
+                  markThreadUnread={markThreadUnread}
+                  threadJumpLabelByKey={threadJumpLabelByKey}
+                  attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
+                  expandThreadListForProject={expandThreadListForProject}
+                  collapseThreadListForProject={collapseThreadListForProject}
+                  dragInProgressRef={dragInProgressRef}
+                  suppressProjectClickAfterDragRef={suppressProjectClickAfterDragRef}
+                  suppressProjectClickForContextMenuRef={suppressProjectClickForContextMenuRef}
+                  isManualProjectSorting={isManualProjectSorting}
+                  dragHandleProps={null}
+                />
+              )),
+            )}
           </SidebarMenu>
         )}
 

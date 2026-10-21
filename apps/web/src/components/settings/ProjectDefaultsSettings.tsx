@@ -7,6 +7,7 @@ import {
 import { createModelSelection } from "@t3tools/shared/model";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useNavigate } from "@tanstack/react-router";
+import { useRef } from "react";
 
 import { mergeEnvironmentSettings } from "../../hooks/useSettings";
 import {
@@ -26,6 +27,7 @@ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { runtimeModeConfig, runtimeModeOptions } from "../chat/runtimeModeConfig";
 import { PULL_REQUEST_MERGE_METHOD_LABELS } from "../pullRequest/pullRequestDetail.logic";
 import { TraitsPicker } from "../chat/TraitsPicker";
+import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { toastManager } from "../ui/toast";
 import { Switch } from "../ui/switch";
@@ -48,6 +50,52 @@ import {
 const WORKTREE_SUBMODULES_OPTIONS = ["recursive", "top-level", "none"] as const;
 function isWorktreeSubmodules(value: string | null): value is WorktreeSubmodules {
   return value !== null && (WORKTREE_SUBMODULES_OPTIONS as readonly string[]).includes(value);
+}
+
+function MasterFolderRow() {
+  const { targets } = useSettingsScope();
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const mixed = useScopedSettingsMixed(["masterFolder"]);
+  const edited = useRef(false);
+  const scopeKey = targets.map((target) => target.environmentId).join(",");
+
+  return (
+    <SettingsRow
+      {...searchableSetting("master-folder")}
+      description="Folder every thread can read, whatever its project, such as your specs and templates. Threads are told to follow its CLAUDE.md or AGENTS.md. Applies to Claude and Codex."
+      serverScoped
+      settingKeys={["masterFolder"]}
+      mixed={mixed}
+      resetAction={
+        mixed || settings.masterFolder !== "" ? (
+          <SettingResetButton
+            label="master folder"
+            onClick={() => updateSettings({ masterFolder: "" })}
+          />
+        ) : null
+      }
+      control={
+        <Input
+          key={`${scopeKey}:${mixed}:${settings.masterFolder}`}
+          aria-label="Master folder"
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder={mixed ? "Mixed" : "None"}
+          defaultValue={mixed ? "" : settings.masterFolder}
+          onChange={() => {
+            edited.current = true;
+          }}
+          onBlur={(event) => {
+            const value = event.target.value.trim();
+            if (edited.current && (mixed || value !== settings.masterFolder))
+              updateSettings({ masterFolder: value });
+            edited.current = false;
+          }}
+        />
+      }
+    />
+  );
 }
 
 export function ProjectDefaultsSettings({ category }: { category: ProjectSettingsCategory }) {
@@ -332,6 +380,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
             }
           />
           {workspaceRow}
+          {isProjectScope ? null : <MasterFolderRow />}
           <SettingsRow
             serverScoped
             settingKeys={["worktreeSubmodules"]}

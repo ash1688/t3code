@@ -22,6 +22,10 @@ export function buildRuntimeInstructions(runtime: {
   return `<runtime_info>In case you're asked: you are running in T3 Code through the ${harness} harness${modelInfo}${effortInfo}. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}`;
 }
 
+export function buildMasterFolderInstructions(folder: string): string {
+  return `<master_folder>The user keeps shared reference material for all of their projects in ${toSingleLine(folder)}. Before you start work, read the CLAUDE.md or AGENTS.md there if one exists and follow it. Treat the specifications, templates and past work in that folder as the source of truth, and match their layout and style in what you produce. Do not change files in that folder unless the user asks you to.</master_folder>`;
+}
+
 function toSingleLine(value: string): string {
   return value.replaceAll(/\s+/g, " ").trim();
 }

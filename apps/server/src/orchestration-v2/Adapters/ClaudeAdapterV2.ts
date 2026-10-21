@@ -161,7 +161,10 @@ import {
 import type { ManagedServerProvider } from "@t3tools/provider-core/server/snapshot";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
-import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
+import {
+  buildMasterFolderInstructions,
+  buildRuntimeInstructions,
+} from "@t3tools/provider-core/server/runtimeInstructions";
 import {
   mcpToolPresentation,
   normalizeMcpText,
@@ -1272,6 +1275,7 @@ export function makeClaudeQueryOptions(input: {
   readonly resumeSessionAt?: string;
   readonly cwd: string | null;
   readonly attachmentsDir?: string;
+  readonly masterFolder?: string;
   readonly settings?: ClaudeSettings;
   readonly sdkSettings?: string | ClaudeSdkSettings;
   readonly environment?: NodeJS.ProcessEnv;
@@ -1379,6 +1383,9 @@ export function makeClaudeQueryOptions(input: {
       append: [
         buildRuntimeInstructions({ harness: "Claude Code" }) +
           (input.mcpServers === undefined ? "" : T3_CODE_ORCHESTRATION_INSTRUCTIONS),
+        ...(input.masterFolder === undefined
+          ? []
+          : [buildMasterFolderInstructions(input.masterFolder)]),
         ...launchAppendSystemPrompt,
       ].join("\n\n"),
     },
@@ -1387,6 +1394,7 @@ export function makeClaudeQueryOptions(input: {
   const additionalDirectories = [
     ...(input.cwd === null ? [] : [input.cwd]),
     ...(input.attachmentsDir === undefined ? [] : [input.attachmentsDir]),
+    ...(input.masterFolder === undefined ? [] : [input.masterFolder]),
   ];
   const withDirectories =
     additionalDirectories.length === 0 ? options : { ...options, additionalDirectories };
@@ -9255,6 +9263,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(resumeSessionAt === undefined ? {} : { resumeSessionAt }),
             cwd: turnInput.runtimePolicy.cwd,
             attachmentsDir,
+            ...(turnInput.runtimePolicy.masterFolder === undefined
+              ? {}
+              : { masterFolder: turnInput.runtimePolicy.masterFolder }),
             settings: adapterOptions.settings,
             environment: claudeQueryEnvironment(
               adapterOptions.environment,

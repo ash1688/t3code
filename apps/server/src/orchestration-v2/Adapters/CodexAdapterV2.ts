@@ -97,6 +97,7 @@ import { resolveAttachmentPath, resolveAttachmentPathById } from "../../attachme
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import { ServerConfig } from "../../config.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import { buildMasterFolderInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import {
   buildCodexAdditionalContext,
   buildCodexDeveloperInstructions,
@@ -769,10 +770,22 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
             },
           )
         : undefined;
-    const additionalContext =
-      t3Context === undefined && Object.keys(appContext).length === 0
+    // Codex's workspace-write sandbox already reads outside cwd, so the folder only needs naming.
+    const masterFolderContext =
+      input.runtimePolicy.masterFolder === undefined
         ? undefined
-        : { ...t3Context, ...appContext };
+        : {
+            t3_code_master_folder: {
+              kind: "application" as const,
+              value: buildMasterFolderInstructions(input.runtimePolicy.masterFolder),
+            },
+          };
+    const additionalContext =
+      t3Context === undefined &&
+      masterFolderContext === undefined &&
+      Object.keys(appContext).length === 0
+        ? undefined
+        : { ...t3Context, ...masterFolderContext, ...appContext };
     const collaborationMode: CodexSchema.ClientRequest__CollaborationMode | undefined =
       input.runtimePolicy.interactionMode !== "plan" && developerInstructions === undefined
         ? undefined
