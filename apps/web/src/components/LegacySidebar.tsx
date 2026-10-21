@@ -7,6 +7,8 @@ import {
   ChevronRightIcon,
   FolderPlusIcon,
   Globe2Icon,
+  PlusIcon,
+  XIcon,
   SearchIcon,
   SquarePenIcon,
   TriangleAlertIcon,
@@ -160,12 +162,15 @@ import {
   Menu,
   MenuCheckboxItem,
   MenuGroup,
+  MenuItem,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
   MenuTrigger,
 } from "./ui/menu";
-import { groupProjectsByParentFolder } from "./LegacySidebar.folders";
+import { groupProjectsByParentFolder, isSameFolder } from "./LegacySidebar.folders";
+import { NewSubGroupDialog, type SubGroupTarget } from "./LegacySidebar.subGroups";
+import { FolderBrowseDialog } from "./settings/FolderBrowseDialog";
 import {
   NumberField,
   NumberFieldDecrement,
@@ -2620,6 +2625,7 @@ function ProjectSortMenu({
   threadPreviewCount,
   groupByParentFolder,
   onGroupByParentFolderChange,
+  onAddLevelFolder,
   onProjectSortOrderChange,
   onThreadSortOrderChange,
   onThreadPreviewCountChange,
@@ -2629,6 +2635,7 @@ function ProjectSortMenu({
   threadPreviewCount: SidebarThreadPreviewCount;
   groupByParentFolder: boolean;
   onGroupByParentFolderChange: (enabled: boolean) => void;
+  onAddLevelFolder: () => void;
   onProjectSortOrderChange: (sortOrder: SidebarProjectSortOrder) => void;
   onThreadSortOrderChange: (sortOrder: SidebarThreadSortOrder) => void;
   onThreadPreviewCountChange: (count: SidebarThreadPreviewCount) => void;
@@ -2683,6 +2690,10 @@ function ProjectSortMenu({
           >
             Group by parent folder
           </MenuCheckboxItem>
+          <MenuItem onClick={onAddLevelFolder}>
+            <FolderPlusIcon />
+            Add level folder…
+          </MenuItem>
         </MenuGroup>
         <MenuGroup>
           <div className="px-2 pt-2 pb-1 sm:text-xs font-medium text-muted-foreground">
@@ -2750,28 +2761,74 @@ const NO_COLLAPSED_PROJECT_FOLDERS: readonly string[] = [];
 function SidebarProjectFolderSection({
   label,
   collapsed,
+  empty,
   onToggle,
+  onNewSubGroup,
+  onRemove,
   children,
 }: {
   label: string;
   collapsed: boolean;
+  empty: boolean;
   onToggle: () => void;
+  onNewSubGroup: () => void;
+  onRemove: (() => void) | null;
   children: React.ReactNode;
 }) {
   return (
-    <li className="list-none">
-      <button
-        type="button"
-        aria-expanded={!collapsed}
-        className="flex w-full items-center gap-1 rounded-sm px-2 pt-2 pb-1 text-left text-xs font-medium text-sidebar-muted-foreground/80 hover:text-sidebar-foreground"
-        onClick={onToggle}
-      >
-        <ChevronRightIcon
-          className={`size-3 shrink-0 transition-transform duration-150 ${collapsed ? "" : "rotate-90"}`}
-        />
-        <span className="truncate">{label}</span>
-      </button>
-      {collapsed ? null : <SidebarMenu>{children}</SidebarMenu>}
+    <li className="group/folder list-none">
+      <div className="flex items-center pr-1.5">
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          className="flex min-w-0 flex-1 items-center gap-1 rounded-sm px-2 pt-2 pb-1 text-left text-xs font-medium text-sidebar-muted-foreground/80 hover:text-sidebar-foreground"
+          onClick={onToggle}
+        >
+          <ChevronRightIcon
+            className={`size-3 shrink-0 transition-transform duration-150 ${collapsed ? "" : "rotate-90"}`}
+          />
+          <span className="truncate">{label}</span>
+        </button>
+        {onRemove ? (
+          <span className="opacity-0 group-hover/folder:opacity-100 focus-within:opacity-100">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="icon-xs"
+                    variant="ghost-muted"
+                    aria-label={`Remove ${label} heading`}
+                    onClick={onRemove}
+                  />
+                }
+              >
+                <XIcon className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipPopup side="right">Remove heading (keeps the folder on disk)</TooltipPopup>
+            </Tooltip>
+          </span>
+        ) : null}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                size="icon-xs"
+                variant="ghost-muted"
+                aria-label={`New sub group in ${label}`}
+                onClick={onNewSubGroup}
+              />
+            }
+          >
+            <PlusIcon className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipPopup side="right">New sub group in {label}</TooltipPopup>
+        </Tooltip>
+      </div>
+      {collapsed ? null : empty ? (
+        <div className="px-7 pb-1 text-secondary-label text-xs">No sub groups yet</div>
+      ) : (
+        <SidebarMenu>{children}</SidebarMenu>
+      )}
     </li>
   );
 }
@@ -2913,21 +2970,52 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     NO_COLLAPSED_PROJECT_FOLDERS,
     CollapsedProjectFolders,
   );
+  const addedFolders = useClientSettings((settings) => settings.sidebarProjectFolders);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const [subGroupTarget, setSubGroupTarget] = useState<SubGroupTarget | null>(null);
+  const [addingLevelFolder, setAddingLevelFolder] = useState(false);
+  const addLevelFolder = (path: string) =>
+    updateClientSettings({
+      sidebarGroupProjectsByParentFolder: true,
+      sidebarProjectFolders: addedFolders.some((folder) => isSameFolder(folder, path))
+        ? addedFolders
+        : [...addedFolders, path],
+    });
   const renderFolderSections = (
     renderProjects: (projects: readonly SidebarProjectSnapshot[]) => React.ReactNode,
   ) =>
     groupByParentFolder
-      ? groupProjectsByParentFolder(sortedProjects).map((section) => (
+      ? groupProjectsByParentFolder(sortedProjects, addedFolders).map((section) => (
           <SidebarProjectFolderSection
             key={section.key}
             label={section.label}
             collapsed={collapsedFolderKeys.includes(section.key)}
+            empty={section.projects.length === 0}
             onToggle={() =>
               setCollapsedFolderKeys((keys) =>
                 keys.includes(section.key)
                   ? keys.filter((key) => key !== section.key)
                   : [...keys, section.key],
               )
+            }
+            onNewSubGroup={() => {
+              const environmentId = section.projects[0]?.environmentId ?? primaryEnvironmentId;
+              if (environmentId)
+                setSubGroupTarget({
+                  environmentId,
+                  folderPath: section.path,
+                  label: section.label,
+                });
+            }}
+            onRemove={
+              section.added
+                ? () =>
+                    updateClientSettings({
+                      sidebarProjectFolders: addedFolders.filter(
+                        (folder) => !isSameFolder(folder, section.path),
+                      ),
+                    })
+                : null
             }
           >
             {renderProjects(section.projects)}
@@ -2989,6 +3077,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
               onGroupByParentFolderChange={(enabled) =>
                 updateClientSettings({ sidebarGroupProjectsByParentFolder: enabled })
               }
+              onAddLevelFolder={() => setAddingLevelFolder(true)}
               onProjectSortOrderChange={handleProjectSortOrderChange}
               onThreadSortOrderChange={handleThreadSortOrderChange}
               onThreadPreviewCountChange={handleThreadPreviewCountChange}
@@ -3099,9 +3188,26 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
           </SidebarMenu>
         )}
 
-        {projectsLength === 0 && (
+        {projectsLength === 0 && !(groupByParentFolder && addedFolders.length > 0) && (
           <div className="px-2 pt-4 text-center text-secondary-label text-xs">No projects yet</div>
         )}
+        {subGroupTarget ? (
+          <NewSubGroupDialog
+            target={subGroupTarget}
+            onClose={() => setSubGroupTarget(null)}
+            handleNewThread={handleNewThread}
+          />
+        ) : null}
+        {addingLevelFolder ? (
+          <FolderBrowseDialog
+            open
+            onOpenChange={setAddingLevelFolder}
+            environmentId={primaryEnvironmentId}
+            initialPath=""
+            title="Add level folder"
+            onSelect={addLevelFolder}
+          />
+        ) : null}
       </SidebarGroup>
     </SidebarContent>
   );

@@ -446,6 +446,10 @@ export const ClientSettingsSchema = Schema.Struct({
   sidebarGroupProjectsByParentFolder: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
+  /** Folders shown as sidebar headings even before they hold a project. */
+  sidebarProjectFolders: Schema.Array(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   sidebarWorkingShelfEnabled: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -1647,6 +1651,7 @@ export const ClientSettingsPatch = Schema.Struct({
   showSkillsInSlashMenu: Schema.optionalKey(Schema.Boolean),
   legacySidebarEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarGroupProjectsByParentFolder: Schema.optionalKey(Schema.Boolean),
+  sidebarProjectFolders: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
   sidebarWorkingShelfEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
