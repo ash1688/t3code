@@ -442,9 +442,11 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   proactivePanelsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   showSkillsInSlashMenu: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  legacySidebarEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // hlnsc.code organises work as level folders holding unit projects, which only the
+  // project tree sidebar shows, so it and folder grouping are on by default.
+  legacySidebarEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sidebarGroupProjectsByParentFolder: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(false)),
+    Schema.withDecodingDefault(Effect.succeed(true)),
   ),
   /** Folders shown as sidebar headings even before they hold a project. */
   sidebarProjectFolders: Schema.Array(TrimmedNonEmptyString).pipe(

@@ -579,6 +579,8 @@ function OpenCommandPaletteDialog(props: {
   const [addProjectEnvironmentId, setAddProjectEnvironmentId] = useState<EnvironmentId | null>(
     null,
   );
+  const [systemFolderPickEnvironmentId, setSystemFolderPickEnvironmentId] =
+    useState<EnvironmentId | null>(null);
   const [isPickingProjectFolder, setIsPickingProjectFolder] = useState(false);
   const [addProjectCloneFlow, setAddProjectCloneFlow] = useState<AddProjectCloneFlow | null>(null);
   const [newProjectFlow, setNewProjectFlow] = useState<{
@@ -1001,6 +1003,10 @@ function OpenCommandPaletteDialog(props: {
         icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
         keepOpen: true,
         run: async () => {
+          if (environmentId === primaryEnvironmentId && window.desktopBridge !== undefined) {
+            setSystemFolderPickEnvironmentId(environmentId);
+            return;
+          }
           await startAddProjectBrowse(environmentId);
         },
       },
@@ -1778,6 +1784,29 @@ function OpenCommandPaletteDialog(props: {
     }
     setOpen(false);
   };
+
+  // The desktop app's own host shows the system folder dialog instead of the in-palette browser.
+  // The menu item is built before this handler exists, so it only records the request.
+  const addProjectFromSystemDialog = useEffectEvent(async (environmentId: EnvironmentId) => {
+    const environment = environments.find((candidate) => candidate.environmentId === environmentId);
+    const baseDirectory = environment?.serverConfig?.settings?.addProjectBaseDirectory?.trim();
+    const pickedPath = await readLocalApi()
+      ?.dialogs.pickFolder(baseDirectory ? { initialPath: baseDirectory } : undefined)
+      .catch(() => null);
+    if (!pickedPath) return;
+    await handleAddProjectForEnvironment({
+      environmentId,
+      rawCwd: pickedPath,
+      platform: getEnvironmentBrowsePlatform(environment?.serverConfig?.environment.platform.os),
+      currentProjectCwd: null,
+    });
+  });
+  useEffect(() => {
+    if (systemFolderPickEnvironmentId === null) return;
+    void addProjectFromSystemDialog(systemFolderPickEnvironmentId).finally(() =>
+      setSystemFolderPickEnvironmentId(null),
+    );
+  }, [systemFolderPickEnvironmentId]);
 
   const handleAddProject = async (rawCwd: string) => {
     if (!browseEnvironmentId) return;

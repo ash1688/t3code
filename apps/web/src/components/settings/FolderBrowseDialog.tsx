@@ -4,8 +4,10 @@ import {
 } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { ArrowUpIcon, FolderIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 
+import { readLocalApi } from "../../localApi";
+import { usePrimaryEnvironmentId } from "../../state/environments";
 import { filesystemEnvironment, useFilesystemReadAccess } from "../../state/filesystem";
 import { useEnvironmentQuery } from "../../state/query";
 import { Button } from "../ui/button";
@@ -38,12 +40,36 @@ export function FolderBrowseDialog({
   title: string;
   onSelect: (path: string) => void;
 }) {
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  // The desktop app's own host can show the system folder dialog instead.
+  const useSystemDialog =
+    typeof window !== "undefined" &&
+    window.desktopBridge !== undefined &&
+    environmentId !== null &&
+    environmentId === primaryEnvironmentId;
+  const finishSystemPick = useEffectEvent((picked: string | null) => {
+    if (picked) onSelect(picked);
+    onOpenChange(false);
+  });
+  useEffect(() => {
+    if (!open || !useSystemDialog) return;
+    let cancelled = false;
+    void (async () => {
+      const picked = await readLocalApi()
+        ?.dialogs.pickFolder(initialPath.trim() ? { initialPath: initialPath.trim() } : undefined)
+        .catch(() => null);
+      if (!cancelled) finishSystemPick(picked ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, useSystemDialog, initialPath]);
   const [browsePath, setBrowsePath] = useState(() =>
     ensureBrowseDirectoryPath(initialPath.trim() || "~/"),
   );
   const access = useFilesystemReadAccess(environmentId);
   const query = useEnvironmentQuery(
-    open && environmentId !== null && access.canReadFiles
+    open && !useSystemDialog && environmentId !== null && access.canReadFiles
       ? filesystemEnvironment.browse({ environmentId, input: { partialPath: browsePath } })
       : null,
   );
@@ -55,6 +81,8 @@ export function FolderBrowseDialog({
       : !access.isPending && !access.canReadFiles
         ? (access.error ?? "This connection cannot browse host folders.")
         : query.error;
+
+  if (useSystemDialog) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
