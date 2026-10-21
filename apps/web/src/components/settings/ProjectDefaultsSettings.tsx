@@ -7,7 +7,8 @@ import {
 import { createModelSelection } from "@t3tools/shared/model";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useNavigate } from "@tanstack/react-router";
-import { useRef } from "react";
+import { FolderOpenIcon } from "lucide-react";
+import { useRef, useState } from "react";
 
 import { mergeEnvironmentSettings } from "../../hooks/useSettings";
 import {
@@ -27,7 +28,9 @@ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { runtimeModeConfig, runtimeModeOptions } from "../chat/runtimeModeConfig";
 import { PULL_REQUEST_MERGE_METHOD_LABELS } from "../pullRequest/pullRequestDetail.logic";
 import { TraitsPicker } from "../chat/TraitsPicker";
+import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { FolderBrowseDialog } from "./FolderBrowseDialog";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { toastManager } from "../ui/toast";
 import { Switch } from "../ui/switch";
@@ -58,6 +61,7 @@ function MasterFolderRow() {
   const updateSettings = useUpdateScopedSettings();
   const mixed = useScopedSettingsMixed(["masterFolder"]);
   const edited = useRef(false);
+  const [browsing, setBrowsing] = useState(false);
   const scopeKey = targets.map((target) => target.environmentId).join(",");
 
   return (
@@ -76,23 +80,39 @@ function MasterFolderRow() {
         ) : null
       }
       control={
-        <Input
-          key={`${scopeKey}:${mixed}:${settings.masterFolder}`}
-          aria-label="Master folder"
-          autoCapitalize="none"
-          spellCheck={false}
-          placeholder={mixed ? "Mixed" : "None"}
-          defaultValue={mixed ? "" : settings.masterFolder}
-          onChange={() => {
-            edited.current = true;
-          }}
-          onBlur={(event) => {
-            const value = event.target.value.trim();
-            if (edited.current && (mixed || value !== settings.masterFolder))
-              updateSettings({ masterFolder: value });
-            edited.current = false;
-          }}
-        />
+        <div className="flex items-center gap-1.5">
+          <Input
+            key={`${scopeKey}:${mixed}:${settings.masterFolder}`}
+            aria-label="Master folder"
+            autoCapitalize="none"
+            spellCheck={false}
+            placeholder={mixed ? "Mixed" : "None"}
+            defaultValue={mixed ? "" : settings.masterFolder}
+            onChange={() => {
+              edited.current = true;
+            }}
+            onBlur={(event) => {
+              const value = event.target.value.trim();
+              if (edited.current && (mixed || value !== settings.masterFolder))
+                updateSettings({ masterFolder: value });
+              edited.current = false;
+            }}
+          />
+          <Button variant="outline" size="sm" onClick={() => setBrowsing(true)}>
+            <FolderOpenIcon />
+            Browse…
+          </Button>
+          {browsing ? (
+            <FolderBrowseDialog
+              open
+              onOpenChange={setBrowsing}
+              environmentId={targets[0]?.environmentId ?? null}
+              initialPath={mixed ? "" : settings.masterFolder}
+              title="Choose master folder"
+              onSelect={(path) => updateSettings({ masterFolder: path })}
+            />
+          ) : null}
+        </div>
       }
     />
   );
